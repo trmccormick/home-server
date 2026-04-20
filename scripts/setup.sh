@@ -90,6 +90,31 @@ if [[ -f "${SCRIPT_DIR}/config/samba/smb.conf" ]]; then
   cp "${SCRIPT_DIR}/config/samba/smb.conf" "${DATA_DIR}/samba/config/smb.conf"
 fi
 
+# ── 6a. Create / validate legacy Samba host-path directories ─────────────────
+# These paths are bind-mounted into the Samba container at the same absolute
+# path so smb.conf can remain unchanged.  External drive mount-points
+# (/mnt/easystore, /mnt/300gb-media) are created here so Docker won't error
+# if the drive is absent; they will simply appear as empty shares until the
+# drive is mounted.  Do NOT hardcode disk UUIDs here – add fstab entries
+# separately for persistent mounts.
+LEGACY_DIRS=(
+  /media/pi/audio
+  /media/pi/documents
+  /media/pi/images
+  /media/pi/video
+  /home/git-pulls
+  /mnt/easystore
+  /mnt/300gb-media
+)
+for dir in "${LEGACY_DIRS[@]}"; do
+  if [[ ! -d "$dir" ]]; then
+    warn "Creating directory: $dir (will appear as an empty share until an external drive is mounted here)"
+    mkdir -p "$dir"
+  else
+    info "Directory exists: $dir"
+  fi
+done
+
 # ── 7. Copy Pi-hole custom DNS ────────────────────────────────────────────────
 if [[ -f "${SCRIPT_DIR}/config/pihole/custom.list" ]]; then
   info "Copying Pi-hole custom DNS list…"

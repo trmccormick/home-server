@@ -45,6 +45,9 @@ services:
 
   # ----------------------------------------------------------
   # Samba – Network file shares (SMB/CIFS)
+  # Shares are defined entirely in config/samba/smb.conf (copied
+  # to ./data/samba/config/ by setup.sh).  The container reads
+  # that file at startup; no -s flags are needed.
   # https://hub.docker.com/r/dperson/samba
   # ----------------------------------------------------------
   samba:
@@ -54,15 +57,30 @@ services:
     env_file:
       - ./env/common.env
       - ./env/samba.env
+    # Only -u is needed: shares come from the mounted smb.conf.
     # Use bash -c so that $SAMBA_PASSWORD is expanded from the container
     # environment (set via env_file above) rather than at compose-parse time.
     entrypoint: ["/sbin/tini", "--", "/bin/bash", "-c"]
     command:
-      - '/usr/bin/samba.sh -u "smbuser;$$SAMBA_PASSWORD" -s "media;/mnt/media;yes;no;no;smbuser" -s "shared;/mnt/shared;yes;no;no;smbuser"'
+      - '/usr/bin/samba.sh -u "smbuser;$$SAMBA_PASSWORD"'
     volumes:
+      # smb.conf – pre-populated by setup.sh from config/samba/smb.conf
       - ./data/samba/config:/etc/samba
+      # Data-dir shares
       - ./data/media:/mnt/media
       - ./data/shared:/mnt/shared
+      # Legacy host-path shares – bind-mounted at the same absolute path so
+      # smb.conf paths are valid inside the container without modification.
+      # These directories are created by setup.sh if absent.  If using external
+      # drives, ensure they are mounted at their respective paths on the host
+      # before starting the container.
+      - /media/pi/audio:/media/pi/audio
+      - /media/pi/documents:/media/pi/documents
+      - /media/pi/images:/media/pi/images
+      - /media/pi/video:/media/pi/video
+      - /home/git-pulls:/home/git-pulls
+      - /mnt/easystore:/mnt/easystore
+      - /mnt/300gb-media:/mnt/300gb-media
     ports:
       - "139:139"
       - "445:445"

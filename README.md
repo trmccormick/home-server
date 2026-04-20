@@ -46,6 +46,8 @@ sudo ./scripts/setup.sh
 This will:
 - Update the system and install Docker + Docker Compose
 - Create the required data directories under `./data/`
+- Copy `config/samba/smb.conf` into `./data/samba/config/` (the container's `/etc/samba`)
+- Create legacy Samba host-path directories (e.g. `/media/pi/audio`, `/mnt/easystore`) if they don't already exist
 - Create per-service `./env/<service>.env` files from the bundled examples
 - Disable the `systemd-resolved` stub listener so Pi-hole can bind to port 53
 
@@ -109,18 +111,44 @@ Runs a lightweight updater that refreshes your DuckDNS record every 5 minutes.
 
 ### Samba
 
-Two shares are configured out of the box:
+Shares are configured entirely via **`config/samba/smb.conf`** – the single source of truth.  The setup script copies that file into `./data/samba/config/smb.conf`, which is bind-mounted to `/etc/samba` inside the container.  No `-s` share flags are used in `docker-compose.yml`.
 
-| Share | Path on host | Description |
-|-------|--------------|-------------|
-| `\\<pi-ip>\media` | `./data/media` | Media library (read/write) |
-| `\\<pi-ip>\shared` | `./data/shared` | General-purpose share |
+**Default shares** (always available, backed by `./data/`):
+
+| Share | Container path | Host path | Description |
+|-------|---------------|-----------|-------------|
+| `\\<pi-ip>\media` | `/mnt/media` | `./data/media` | Media library (read/write) |
+| `\\<pi-ip>\shared` | `/mnt/shared` | `./data/shared` | General-purpose share |
+
+**Legacy host-path shares** (backed by host directories / external drives):
+
+| Share | Path | Notes |
+|-------|------|-------|
+| `\\<pi-ip>\audio` | `/media/pi/audio` | Created by setup.sh if absent |
+| `\\<pi-ip>\documents` | `/media/pi/documents` | Created by setup.sh if absent |
+| `\\<pi-ip>\images` | `/media/pi/images` | Created by setup.sh if absent |
+| `\\<pi-ip>\video` | `/media/pi/video` | Created by setup.sh if absent |
+| `\\<pi-ip>\git-pulls` | `/home/git-pulls` | Created by setup.sh if absent |
+| `\\<pi-ip>\easystore` | `/mnt/easystore` | External drive mount-point |
+| `\\<pi-ip>\300gb-media` | `/mnt/300gb-media` | External drive mount-point |
+
+> **External drives:** add entries to `/etc/fstab` on the host to mount the drives at their respective paths before running `docker compose up`.  No disk UUIDs are hardcoded in this repo.
 
 Default username: `smbuser` / Password: value of `SAMBA_PASSWORD` in `env/samba.env`
 
-To customise shares, edit `config/samba/smb.conf` then restart the container:
+SMB protocol: **SMB2 / SMB3** with **mandatory signing** (compatible with Windows 7 Backup and later clients).
+
+To customise shares, edit `config/samba/smb.conf`, then re-run setup to push the changes and restart the container:
 
 ```bash
+sudo ./scripts/setup.sh          # re-copies smb.conf to ./data/samba/config/
+docker compose restart samba
+```
+
+Or, if you only changed `config/samba/smb.conf` after initial setup:
+
+```bash
+cp config/samba/smb.conf ./data/samba/config/smb.conf
 docker compose restart samba
 ```
 
