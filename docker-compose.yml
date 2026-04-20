@@ -2,8 +2,9 @@
 # Raspberry Pi 4 Home Server – Docker Compose
 # ============================================================
 # Prerequisites:
-#   1. cp .env.example .env  and fill in your values
-#   2. docker compose up -d
+#   1. Copy env examples:  cp env/<service>.env.example env/<service>.env
+#   2. Edit each env/<service>.env with your real values
+#   3. docker compose up -d
 # ============================================================
 
 services:
@@ -17,15 +18,11 @@ services:
     image: lscr.io/linuxserver/duckdns:latest
     container_name: duckdns
     restart: unless-stopped
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - TZ=${TZ:-America/New_York}
-      - SUBDOMAINS=${DUCKDNS_SUBDOMAINS}
-      - TOKEN=${DUCKDNS_TOKEN}
-      - LOG_FILE=false
+    env_file:
+      - ./env/common.env
+      - ./env/duckdns.env
     volumes:
-      - ${DATA_DIR:-/mnt/data}/duckdns/config:/config
+      - ./data/duckdns/config:/config
 
   # ----------------------------------------------------------
   # Jellyfin – Media server
@@ -35,13 +32,11 @@ services:
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     restart: unless-stopped
-    environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
-      - TZ=${TZ:-America/New_York}
+    env_file:
+      - ./env/common.env
     volumes:
-      - ${DATA_DIR:-/mnt/data}/jellyfin/config:/config
-      - ${JELLYFIN_MEDIA_DIR:-/mnt/data/media}:/media
+      - ./data/jellyfin/config:/config
+      - ./data/media:/media
     ports:
       - "8096:8096"   # HTTP UI
       - "8920:8920"   # HTTPS UI (optional)
@@ -56,21 +51,21 @@ services:
     image: dperson/samba:latest
     container_name: samba
     restart: unless-stopped
-    environment:
-      - TZ=${TZ:-America/New_York}
-      - USERID=${PUID:-1000}
-      - GROUPID=${PGID:-1000}
+    env_file:
+      - ./env/common.env
+      - ./env/samba.env
+    # Use bash -c so that $SAMBA_PASSWORD is expanded from the container
+    # environment (set via env_file above) rather than at compose-parse time.
+    entrypoint: ["/sbin/tini", "--", "/bin/bash", "-c"]
+    command:
+      - '/usr/bin/samba.sh -u "smbuser;$$SAMBA_PASSWORD" -s "media;/mnt/media;yes;no;no;smbuser" -s "shared;/mnt/shared;yes;no;no;smbuser"'
     volumes:
-      - ${DATA_DIR:-/mnt/data}/samba/config:/etc/samba
-      - ${DATA_DIR:-/mnt/data}/media:/mnt/media
-      - ${DATA_DIR:-/mnt/data}/shared:/mnt/shared
+      - ./data/samba/config:/etc/samba
+      - ./data/media:/mnt/media
+      - ./data/shared:/mnt/shared
     ports:
       - "139:139"
       - "445:445"
-    command: >
-      -u "smbuser;${SAMBA_PASSWORD}"
-      -s "media;/mnt/media;yes;no;no;smbuser"
-      -s "shared;/mnt/shared;yes;no;no;smbuser"
 
   # ----------------------------------------------------------
   # Pi-hole – Network-wide ad blocking / local DNS
@@ -80,14 +75,12 @@ services:
     image: pihole/pihole:latest
     container_name: pihole
     restart: unless-stopped
-    environment:
-      - TZ=${TZ:-America/New_York}
-      - WEBPASSWORD=${PIHOLE_WEB_PASSWORD}
-      - FTLCONF_LOCAL_IPV4=${SERVER_IP:-192.168.1.100}
-      - PIHOLE_DNS_=${PIHOLE_DNS:-8.8.8.8;8.8.4.4}
+    env_file:
+      - ./env/common.env
+      - ./env/pihole.env
     volumes:
-      - ${DATA_DIR:-/mnt/data}/pihole/etc-pihole:/etc/pihole
-      - ${DATA_DIR:-/mnt/data}/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
+      - ./data/pihole/etc-pihole:/etc/pihole
+      - ./data/pihole/etc-dnsmasq.d:/etc/dnsmasq.d
     ports:
       - "53:53/tcp"
       - "53:53/udp"
@@ -96,7 +89,7 @@ services:
       - NET_ADMIN
     dns:
       - 127.0.0.1
-      - ${PIHOLE_DNS:-8.8.8.8}
+      - 8.8.8.8
 
   # ----------------------------------------------------------
   # PostgreSQL – Relational database
@@ -107,17 +100,17 @@ services:
     image: postgres:16-alpine
     container_name: postgres
     restart: unless-stopped
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-admin}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB:-homeserver}
-      - TZ=${TZ:-America/New_York}
+    env_file:
+      - ./env/common.env
+      - ./env/postgres.env
     volumes:
-      - ${DATA_DIR:-/mnt/data}/postgres/data:/var/lib/postgresql/data
+      - ./data/postgres/data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin}"]
+      # $$ prevents compose-time interpolation; the variable is expanded at
+      # runtime inside the container from the env_file above.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-admin}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -135,14 +128,29 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://192.168.1.200:11434}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-homeserver}
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-change-this-secret}
+    env_file:
+      - ./env/common.env
+      - ./env/open-webui.env
     volumes:
-      - ${DATA_DIR:-/mnt/data}/open-webui:/app/backend/data
+      - ./data/open-webui:/app/backend/data
     ports:
       - "3000:8080"  # Open WebUI
+
+  # ----------------------------------------------------------
+  # Portainer – Docker management UI
+  # Manage containers, images, volumes, and networks via browser.
+  # https://hub.docker.com/r/portainer/portainer-ce
+  # ----------------------------------------------------------
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/portainer:/data
+    ports:
+      - "9000:9000"   # HTTP UI
+      - "9443:9443"   # HTTPS UI
 
 networks:
   default:

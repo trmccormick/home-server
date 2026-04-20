@@ -1,5 +1,9 @@
-# Secrets – never commit the real .env
+# Secrets – never commit real env files
 .env
+env/*.env
+
+# Persistent runtime data – stored locally, never committed
+data/
 
 # macOS
 .DS_Store
