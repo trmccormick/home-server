@@ -1,0 +1,12 @@
+# Secrets – never commit the real .env
+.env
+
+# macOS
+.DS_Store
+
+# Editor directories
+.idea/
+.vscode/
+
+# Docker generated volumes (if accidentally placed here)
+volumes/
