@@ -1,0 +1,9 @@
+# Pi-hole custom DNS entries
+# Add local hostname → IP mappings here so Pi-hole resolves them.
+# Format:  <IP>  <hostname>
+#
+# Example:
+#   192.168.1.100  raspberrypi.local
+#   192.168.1.200  ollama-host.local
+
+192.168.1.100  raspberrypi.local
