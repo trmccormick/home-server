@@ -8,7 +8,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DATA_DIR="${DATA_DIR:-/mnt/data}"
+DATA_DIR="${DATA_DIR:-${SCRIPT_DIR}/data}"
+ENV_DIR="${SCRIPT_DIR}/env"
 
 # ── Colour helpers ─────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -60,7 +61,8 @@ mkdir -p \
   "${DATA_DIR}/pihole/etc-pihole" \
   "${DATA_DIR}/pihole/etc-dnsmasq.d" \
   "${DATA_DIR}/postgres/data" \
-  "${DATA_DIR}/open-webui"
+  "${DATA_DIR}/open-webui" \
+  "${DATA_DIR}/portainer"
 
 PUID="${SUDO_USER:+$(id -u "$SUDO_USER")}"
 PUID="${PUID:-1000}"
@@ -68,26 +70,30 @@ PGID="${SUDO_USER:+$(id -g "$SUDO_USER")}"
 PGID="${PGID:-1000}"
 chown -R "${PUID}:${PGID}" "${DATA_DIR}"
 
-# ── 5. Copy Samba config ──────────────────────────────────────────────────────
+# ── 5. Create env directory and copy example env files ────────────────────────
+info "Setting up env/ directory under ${ENV_DIR}…"
+mkdir -p "${ENV_DIR}"
+
+for example in "${SCRIPT_DIR}"/env/*.env.example; do
+  service_env="${ENV_DIR}/$(basename "${example}" .example)"
+  if [[ ! -f "${service_env}" ]]; then
+    cp "${example}" "${service_env}"
+    warn "Created ${service_env} – please edit it before starting services!"
+  else
+    info "$(basename "${service_env}") already exists – skipping"
+  fi
+done
+
+# ── 6. Copy Samba config ──────────────────────────────────────────────────────
 if [[ -f "${SCRIPT_DIR}/config/samba/smb.conf" ]]; then
   info "Copying Samba configuration…"
   cp "${SCRIPT_DIR}/config/samba/smb.conf" "${DATA_DIR}/samba/config/smb.conf"
 fi
 
-# ── 6. Copy Pi-hole custom DNS ────────────────────────────────────────────────
+# ── 7. Copy Pi-hole custom DNS ────────────────────────────────────────────────
 if [[ -f "${SCRIPT_DIR}/config/pihole/custom.list" ]]; then
   info "Copying Pi-hole custom DNS list…"
   cp "${SCRIPT_DIR}/config/pihole/custom.list" "${DATA_DIR}/pihole/etc-pihole/custom.list"
-fi
-
-# ── 7. Create .env from example if not already present ───────────────────────
-if [[ ! -f "${SCRIPT_DIR}/.env" ]]; then
-  if [[ -f "${SCRIPT_DIR}/.env.example" ]]; then
-    cp "${SCRIPT_DIR}/.env.example" "${SCRIPT_DIR}/.env"
-    warn ".env created from .env.example – please edit it before starting services!"
-  fi
-else
-  info ".env already exists – skipping"
 fi
 
 # ── 8. Disable systemd-resolved stub listener (conflicts with Pi-hole on :53) ─
@@ -103,12 +109,19 @@ echo ""
 info "Setup complete!"
 echo ""
 echo "  Next steps:"
-echo "  1. Edit .env with your real values:"
-echo "       nano ${SCRIPT_DIR}/.env"
+echo "  1. Edit the env files with your real values:"
+echo "       nano ${ENV_DIR}/common.env"
+echo "       nano ${ENV_DIR}/duckdns.env"
+echo "       nano ${ENV_DIR}/pihole.env"
+echo "       nano ${ENV_DIR}/postgres.env"
+echo "       nano ${ENV_DIR}/open-webui.env"
+echo "       nano ${ENV_DIR}/samba.env"
+echo "       nano ${ENV_DIR}/portainer.env   # no required vars – configured via web UI"
 echo "  2. Start all services:"
 echo "       cd ${SCRIPT_DIR} && docker compose up -d"
 echo "  3. Access services:"
 echo "       Jellyfin:    http://<pi-ip>:8096"
 echo "       Pi-hole:     http://<pi-ip>:8080/admin"
 echo "       Open WebUI:  http://<pi-ip>:3000"
+echo "       Portainer:   http://<pi-ip>:9000"
 echo ""
