@@ -12,6 +12,8 @@ services:
   # ----------------------------------------------------------
   # DuckDNS – Dynamic DNS updater
   # Keeps your DuckDNS subdomain pointed at your current IP.
+  # Uncomment nginx-proxy-manager below before exposing any
+  # service externally via DuckDNS — SSL termination required.
   # https://hub.docker.com/r/linuxserver/duckdns
   # ----------------------------------------------------------
   duckdns:
@@ -23,6 +25,30 @@ services:
       - ./env/duckdns.env
     volumes:
       - ./data/duckdns/config:/config
+
+  # ----------------------------------------------------------
+  # Nginx Proxy Manager – Reverse proxy + SSL (Let's Encrypt)
+  # Uncomment this service before exposing anything via DuckDNS.
+  # After first start, log in at http://<pi-ip>:81
+  #   Default credentials: admin@example.com / changeme
+  # Add proxy hosts for each service you want to expose:
+  #   jellyfin.<your-duck-domain>.duckdns.org → http://localhost:8096
+  #   webui.<your-duck-domain>.duckdns.org    → http://localhost:3000
+  # https://hub.docker.com/r/jc21/nginx-proxy-manager
+  # ----------------------------------------------------------
+  # nginx-proxy-manager:
+  #   image: jc21/nginx-proxy-manager:latest
+  #   container_name: nginx-proxy-manager
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./data/nginx/data:/data
+  #     - ./data/nginx/letsencrypt:/etc/letsencrypt
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #     - "81:81"   # Admin UI — change password immediately after first login
+  #   # env_file:
+  #   #   - ./env/nginx.env   # create this if you need custom DB backend
 
   # ----------------------------------------------------------
   # Jellyfin – Media server
@@ -38,16 +64,15 @@ services:
       - ./data/jellyfin/config:/config
       - ./data/media:/media
     ports:
-      - "8096:8096"   # HTTP UI
-      - "8920:8920"   # HTTPS UI (optional)
+      - "8096:8096"     # HTTP UI
+      - "8920:8920"     # HTTPS UI (optional)
       - "7359:7359/udp" # local discovery
       - "1900:1900/udp" # DLNA
 
   # ----------------------------------------------------------
   # Samba – Network file shares (SMB/CIFS)
-  # Shares are defined entirely in config/samba/smb.conf (copied
-  # to ./data/samba/config/ by setup.sh).  The container reads
-  # that file at startup; no -s flags are needed.
+  # Note: dperson/samba is unmaintained. If issues arise,
+  # consider switching to ghcr.io/servercontainers/samba
   # https://hub.docker.com/r/dperson/samba
   # ----------------------------------------------------------
   samba:
@@ -57,30 +82,15 @@ services:
     env_file:
       - ./env/common.env
       - ./env/samba.env
-    # Only -u is needed: shares come from the mounted smb.conf.
     # Use bash -c so that $SAMBA_PASSWORD is expanded from the container
     # environment (set via env_file above) rather than at compose-parse time.
     entrypoint: ["/sbin/tini", "--", "/bin/bash", "-c"]
     command:
-      - '/usr/bin/samba.sh -u "smbuser;$$SAMBA_PASSWORD"'
+      - '/usr/bin/samba.sh -u "smbuser;$$SAMBA_PASSWORD" -s "media;/mnt/media;yes;no;no;smbuser" -s "shared;/mnt/shared;yes;no;no;smbuser"'
     volumes:
-      # smb.conf – pre-populated by setup.sh from config/samba/smb.conf
       - ./data/samba/config:/etc/samba
-      # Data-dir shares
       - ./data/media:/mnt/media
       - ./data/shared:/mnt/shared
-      # Legacy host-path shares – bind-mounted at the same absolute path so
-      # smb.conf paths are valid inside the container without modification.
-      # These directories are created by setup.sh if absent.  If using external
-      # drives, ensure they are mounted at their respective paths on the host
-      # before starting the container.
-      - /media/pi/audio:/media/pi/audio
-      - /media/pi/documents:/media/pi/documents
-      - /media/pi/images:/media/pi/images
-      - /media/pi/video:/media/pi/video
-      - /home/git-pulls:/home/git-pulls
-      - /mnt/easystore:/mnt/easystore
-      - /mnt/300gb-media:/mnt/300gb-media
     ports:
       - "139:139"
       - "445:445"
@@ -135,7 +145,9 @@ services:
 
   # ----------------------------------------------------------
   # Open WebUI – Browser-based frontend for Ollama
-  # Connects to an Ollama instance running elsewhere on your LAN.
+  # Connects to Ollama instance(s) running elsewhere on your LAN.
+  # Primary Ollama endpoint set via OLLAMA_BASE_URL in open-webui.env.
+  # Additional Ollama endpoints can be added via the admin UI after login.
   # Stores conversation history in PostgreSQL.
   # https://github.com/open-webui/open-webui
   # ----------------------------------------------------------
